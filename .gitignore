@@ -1,0 +1,13 @@
+# Build artifacts
+build/
+*.o
+nabla
+
+# Graphviz outputs
+*.dot
+*.png
+*.svg
+
+# Editor / OS
+.vscode/
+*.swp
