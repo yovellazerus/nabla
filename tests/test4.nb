@@ -1,0 +1,8 @@
+# Leading blank lines above should be ignored
+
+
+x = 5
+:
+y = @ + $
+bad = "unterminated string
+z = 99

@@ -42,8 +42,8 @@
     X(TOKEN_GREATER)        \
     X(TOKEN_GREATER_EQUAL)  \
     X(TOKEN_QUESTION)       \
-    X(TOKEN_LPAREN)         \
-    X(TOKEN_RPAREN)         \
+    X(TOKEN_OPEN_PAREN)     \
+    X(TOKEN_CLOSE_PAREN)    \
     X(TOKEN_ERROR)
 
 typedef enum {
@@ -132,11 +132,14 @@ typedef struct Lexer {
     size_t col;
 } Lexer;
 
-static void lexer_init(Lexer *lex, const char *src) {
+Lexer* lexer_make(const char *src) {
+    Lexer *lex = malloc(sizeof(Lexer));
+    if (!lex) OUT_OF_MEMORY("allocating Lexer");
     lex->src = src;
     lex->current = src;
     lex->line = 1;
     lex->col = 1;
+    return lex;
 }
 
 static inline bool lexer_is_at_end(const Lexer *lex) {
@@ -177,14 +180,14 @@ static void lexer_skip_spaces_and_comments(Lexer *lex) {
     }
 }
 
-static Token *lexer_scan_ident(Lexer *lex, const char *start, size_t line, size_t col) {
+static Token *lexer_scan_ident(Lexer *lex, const char *start) {
     while (isalnum((unsigned char)lexer_peek(lex)) || lexer_peek(lex) == '_') {
         lexer_advance(lex);
     }
-    return token_make(TOKEN_IDENT, start, (size_t)(lex->current - start), line, col);
+    return token_make(TOKEN_IDENT, start, (size_t)(lex->current - start), lex->line, lex->col);
 }
 
-static Token *lexer_scan_number(Lexer *lex, const char *start, size_t line, size_t col) {
+static Token *lexer_scan_number(Lexer *lex, const char *start) {
     while (isdigit((unsigned char)lexer_peek(lex))) lexer_advance(lex);
 
     if (lexer_peek(lex) == '.' && isdigit((unsigned char)lexer_peek_next(lex))) {
@@ -198,20 +201,20 @@ static Token *lexer_scan_number(Lexer *lex, const char *start, size_t line, size
         while (isdigit((unsigned char)lexer_peek(lex))) lexer_advance(lex);
     }
 
-    return token_make(TOKEN_NUMBER, start, (size_t)(lex->current - start), line, col);
+    return token_make(TOKEN_NUMBER, start, (size_t)(lex->current - start), lex->line, lex->col);
 }
 
-static Token *lexer_scan_string(Lexer *lex, const char *start, size_t line, size_t col) {
+static Token *lexer_scan_string(Lexer *lex, const char *start) {
     const char *content_start = lex->current;
     while (!lexer_is_at_end(lex) && lexer_peek(lex) != '"' && lexer_peek(lex) != '\n') {
         lexer_advance(lex);
     }
     if (lexer_peek(lex) != '"') {
-        return token_make(TOKEN_ERROR, start, (size_t)(lex->current - start), line, col);
+        return token_make(TOKEN_ERROR, start, (size_t)(lex->current - start), lex->line, lex->col);
     }
     size_t content_len = (size_t)(lex->current - content_start);
     lexer_advance(lex); // consume closing '"'
-    return token_make(TOKEN_STRING, content_start, content_len, line, col);
+    return token_make(TOKEN_STRING, content_start, content_len, lex->line, lex->col);
 }
 
 static Token *lexer_next_token(Lexer *lex) {
@@ -228,15 +231,15 @@ static Token *lexer_next_token(Lexer *lex) {
     char c = lexer_advance(lex);
 
     if (isalpha((unsigned char)c) || c == '_') {
-        return lexer_scan_ident(lex, start, line, col);
+        return lexer_scan_ident(lex, start);
     }
     if (isdigit((unsigned char)c)) {
-        return lexer_scan_number(lex, start, line, col);
+        return lexer_scan_number(lex, start);
     }
 
     switch (c) {
         
-        case '"':  return lexer_scan_string(lex, start, line, col);
+        case '"':  return lexer_scan_string(lex, start);
         
         case ':':
             if (lexer_peek(lex) == '=') {
@@ -277,8 +280,8 @@ static Token *lexer_next_token(Lexer *lex) {
             return token_make(TOKEN_GREATER, start, 1, line, col);
             
         case '?':  return token_make(TOKEN_QUESTION,    start, 1, line, col);
-        case '(':  return token_make(TOKEN_LPAREN,  start, 1, line, col);
-        case ')':  return token_make(TOKEN_RPAREN,  start, 1, line, col);
+        case '(':  return token_make(TOKEN_OPEN_PAREN,  start, 1, line, col);
+        case ')':  return token_make(TOKEN_CLOSE_PAREN,  start, 1, line, col);
         
         default:   return token_make(TOKEN_ERROR,   start, 1, line, col);
     }
@@ -334,7 +337,7 @@ static const char *object_type_str(ObjectType type) {
 }
 
 /* OOP-style vtable dispatch:
- USEGE:
+ USAGE:
  *   _(lhs, add, rhs)  ->  (lhs)->ops->add((lhs), rhs)
  *   _(val, print)        ->  (val)->ops->print((val))
 */
@@ -344,7 +347,7 @@ typedef struct Object Object;
 
 /* Vtable: every Object type provides its own implementation of these ops.
  * Unimplemented ops are NULL (meaning "unsupported operation for this type"). */
-typedef struct ObjectOpertions {
+typedef struct ObjectOperations {
     // Arithmetic
     Object *(*add)(Object *self, Object *other);
     Object *(*sub)(Object *self, Object *other);
@@ -364,12 +367,12 @@ typedef struct ObjectOpertions {
     bool    (*is_truthy)(const Object *self);
     void    (*print)(const Object *self);
     void    (*destroy)(Object *self);
-} ObjectOpertions;
+} ObjectOperations;
 
 struct Object {
     ObjectType type;
     int refcount;
-    const ObjectOpertions *ops;
+    const ObjectOperations *ops;
 };
 
 static inline bool object_is_error(const Object *obj) {
@@ -423,7 +426,7 @@ static void none_print(const Object *self) {
     printf("None");
 }
 
-static const ObjectOpertions NONE_OPS = {
+static const ObjectOperations NONE_OPS = {
     .not       = object_not,
     .eq        = ptr_eq,
     .neq       = ptr_neq,
@@ -463,7 +466,7 @@ static void err_destroy(Object *self) {
     free(((ErrorObject *)self)->message);
 }
 
-static const ObjectOpertions ERROR_OPS = {
+static const ObjectOperations ERROR_OPS = {
     .print     = err_print,
     .destroy   = err_destroy
 };
@@ -567,7 +570,7 @@ static void num_print(const Object *self) {
     printf("%g", ((const NumberObject *)self)->value);
 }
 
-static const ObjectOpertions NUMBER_OPS = {
+static const ObjectOperations NUMBER_OPS = {
     .add       = num_add,
     .sub       = num_sub,
     .mul       = num_mul,
@@ -670,7 +673,7 @@ static void str_destroy(Object *self) {
     free(((StringObject *)self)->data);
 }
 
-static const ObjectOpertions STRING_OPS = {
+static const ObjectOperations STRING_OPS = {
     .add       = str_add,
     .not       = object_not,
     .eq        = str_eq,
@@ -714,7 +717,7 @@ static void bool_print(const Object *self) {
     printf("%s", ((const BoolObject *)self)->value ? "True" : "False");
 }
 
-static const ObjectOpertions BOOL_OPS = {
+static const ObjectOperations BOOL_OPS = {
     .not       = object_not,
     .eq        = ptr_eq,
     .neq       = ptr_neq,
@@ -1450,7 +1453,35 @@ static void test_eval_and_dot(void) {
     program_free(prog);
 }
 
+static void test_lex_file(const char *path) {
+    char *src = test_read_file(path);
+    if (!src) return;
+
+    printf("=== Lexing: %s ===\n", path);
+
+    Lexer* lex = lexer_make(src);
+    if (!lex) {
+        free(src);
+        return;
+    }
+    Token *tokens = lexer_tokenize(lex);
+
+    for (const Token *tok = tokens; tok != NULL; tok = tok->next) {
+        token_print(tok);
+    }
+
+    token_list_free(tokens);
+    free(lex);
+    free(src);
+}
+
 int main(int argc, char **argv) {
-    test_eval_and_dot();
+    if (argc == 1) {
+        test_eval_and_dot();
+    } else {
+        for (int i = 1; i < argc; i++) {
+            test_lex_file(argv[i]);
+        }
+    }
     return EXIT_SUCCESS;
 }

@@ -1,0 +1,5 @@
+# Basic variables and constants
+x = 10
+pi := 3.14159
+_flag_1 = (x + 5) * 2 - 4 / 2 # inline comment
+_flag_1?
