@@ -837,14 +837,14 @@ typedef enum {
     NODE_COUNT
 } NodeType;
 
-static const char *node_type_str(NodeType type) {
-    static const char *names[] = {
-#define X(name) [name] = #name,
-        NODE_TYPES(X)
-#undef X
-    };
-    return (type >= 0 && type < NODE_COUNT) ? names[type] : "NODE_UNKNOWN";
-}
+// static const char *node_type_str(NodeType type) {
+//     static const char *names[] = {
+// #define X(name) [name] = #name,
+//         NODE_TYPES(X)
+// #undef X
+//     };
+//     return (type >= 0 && type < NODE_COUNT) ? names[type] : "NODE_UNKNOWN";
+// }
 
 typedef struct Node {
     NodeType type;
@@ -1078,7 +1078,6 @@ static void node_write_dot(const Node *node, FILE *out) {
         }
         
         case NODE_BLOCK: {
-            const BlockNode *b = (const BlockNode *)node;
             fprintf(out, "shape=box, style=\"dashed,filled\", fillcolor=\"#ECEFF1\", label=\"{}\"");
             break;
         }
